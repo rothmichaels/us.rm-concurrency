@@ -11,7 +11,6 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import us.rothmichaels.concurrency.buffers.ArrayBufferTests.ArrayBufferT;
 
 /**
  *

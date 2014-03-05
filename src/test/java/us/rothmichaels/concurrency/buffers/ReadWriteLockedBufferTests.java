@@ -8,8 +8,6 @@ package us.rothmichaels.concurrency.buffers;
 import static org.junit.Assert.*;
 
 import java.util.ArrayList;
-import java.util.Timer;
-import java.util.TimerTask;
 
 import org.junit.After;
 import org.junit.Before;
@@ -31,7 +29,6 @@ public class ReadWriteLockedBufferTests {
 	
 	ReadWriteLockedBuffer<float[]> testBuffer; 
 	float[] testData = new float[SIZE];
-	Timer t;
 	
 	/**
 	 * @throws java.lang.Exception
@@ -39,7 +36,6 @@ public class ReadWriteLockedBufferTests {
 	@Before
 	public void setUp() throws Exception {
 		testBuffer = new BufferT<float[]>(testData);
-		t = new Timer();
 	}
 
 	/**
