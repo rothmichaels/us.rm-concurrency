@@ -8,9 +8,11 @@ package us.rothmichaels.concurrency.collections;
 import static org.junit.Assert.*;
 
 import java.util.ArrayList;
-import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.jmock.Expectations;
 import org.jmock.Mockery;
@@ -21,6 +23,8 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+
+import us.rothmichaels.testing.async.AsyncTester;
 
 /**
  * Tests {@link us.rothmichaels.concurrency.collections.LockCollection}
@@ -169,9 +173,56 @@ public class LockCollectionTests {
 		assertFalse(testLock.tryLock());
 	}
 
+	
+	static final long TIMEOUT = TimeUnit.NANOSECONDS.convert(1,TimeUnit.SECONDS);
+	
 	@Test
-	public void testTryLockTimeout() {
-		fail("write test");
+	public void testTryLockTimeout() throws InterruptedException {
+		// setup
+		innerLocks = new ArrayList<Lock>();
+		for (int i = 1; i <= 3; ++i) {
+			innerLocks.add(new ReentrantLock());
+		}
+		testLock = new LockCollection(new ReentrantLock(), innerLocks);
+		
+		// lock in test thread
+		testLock.lock();
+		final Lock syncLock = new ReentrantLock();
+		final Condition triedLock = syncLock.newCondition();
+		// async tries lock with short (no?) timeout => false
+		// tries with longer time out => true
+		AsyncTester asyncTests = new AsyncTester(new Runnable() {
+			@Override
+			public void run() {
+				final long start = System.nanoTime();
+				ReentrantLock lock = (ReentrantLock)syncLock;
+				try {
+					assertFalse(testLock.tryLock(TIMEOUT, TimeUnit.NANOSECONDS));
+					final long time = System.nanoTime() - start;
+					assertTrue(time >= TIMEOUT && time < TIMEOUT*1.25);
+				} catch (InterruptedException e) {
+					fail("Interrupted.");
+				} finally {
+					lock.lock();
+					triedLock.signalAll();
+					lock.unlock();
+				}
+				
+				try {
+					assertTrue(testLock.tryLock(TIMEOUT, TimeUnit.NANOSECONDS));
+				} catch (InterruptedException e) {
+					fail("Interrupted.");
+				}
+			}
+		});
+		
+		callState.become(FIRST);
+		asyncTests.runTest();
+		syncLock.lock();
+		triedLock.await();
+		syncLock.unlock();
+		testLock.unlock();
+		asyncTests.verify();
 	}
 
 	@Test

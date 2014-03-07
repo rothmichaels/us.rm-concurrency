@@ -5,6 +5,7 @@
  */
 package us.rothmichaels.concurrency.collections;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedList;
@@ -14,6 +15,7 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  *
@@ -22,19 +24,24 @@ import java.util.concurrent.locks.ReentrantLock;
  * (<i><a href="mailto:roth@rothmichaels.us">roth@rothmichaels.us</a></i>)
  *
  */
-public class ReadWriteLockCollection<T extends Collection<ReadWriteLock>> 
-										implements ReadWriteLock {
+public class ReadWriteLockCollection implements ReadWriteLock {
 
-	private final Lock readLock;
-	private final Lock writeLock;
+	private final ReadWriteLock masterLock;
 	
-	private final T collection;
+	private final LockCollection readLock;
+	private final LockCollection writeLock;
 	
-	@SuppressWarnings("unchecked")
-	public ReadWriteLockCollection(T collection) {
-		this.collection = (T) Collections.unmodifiableCollection(collection);
-		this.readLock = new CollectionReadLock();
-		this.writeLock = new CollectionWriteLock();
+	public ReadWriteLockCollection(Collection<? extends ReadWriteLock> collection) {
+		this.masterLock = new ReentrantReadWriteLock();
+		int size = collection.size();
+		List<Lock> tmpR = new ArrayList<Lock>(size);
+		List<Lock> tmpW = new ArrayList<Lock>(size);
+		for (ReadWriteLock lock : collection) {
+			tmpR.add(lock.readLock());
+			tmpW.add(lock.writeLock());
+		}
+		this.readLock = new LockCollection(masterLock.readLock(), tmpR);
+		this.writeLock = new LockCollection(masterLock.writeLock(), tmpW);
 	}
 	
 	/**
@@ -53,169 +60,5 @@ public class ReadWriteLockCollection<T extends Collection<ReadWriteLock>>
 		return writeLock;
 	}
 	
-	
-	class CollectionReadLock extends ReentrantLock {
-		private static final long serialVersionUID = 3796267714597158959L;
-
-		/**
-		 * @see java.util.concurrent.locks.Lock#lock()
-		 */
-		@Override
-		public void lock() {
-			super.lock();
-			for (ReadWriteLock rw : collection) {
-				rw.readLock().lock();
-			}
-		}
-
-		/**
-		 * @see java.util.concurrent.locks.Lock#lockInterruptibly()
-		 */
-		@Override
-		public void lockInterruptibly() throws InterruptedException {
-			super.lockInterruptibly();
-			for (ReadWriteLock rw : collection) {
-				rw.readLock().lockInterruptibly();
-			}
-		}
-
-		/**
-		 * @see java.util.concurrent.locks.Lock#newCondition()
-		 */
-		@Override
-		public Condition newCondition() {
-			throw new AssertionError("Not yet implemented.");
-		}
-
-		/**
-		 * @see java.util.concurrent.locks.Lock#tryLock()
-		 */
-		@Override
-		public boolean tryLock() {
-			
-			if (super.tryLock()) {
-				List<Lock> locked = new LinkedList<Lock>();
-				for (ReadWriteLock rw : collection) {
-					Lock lock = rw.readLock();
-					if (lock.tryLock()) {
-						locked.add(lock);
-					} else {
-						for (Lock l: locked) {
-							l.unlock();
-						}
-						super.unlock();
-						
-						return false;
-					}
-				}
-				
-				return true;
-			} else {
-				return false;
-			}
-		}
-
-		/**
-		 * @see java.util.concurrent.locks.Lock#tryLock(long, java.util.concurrent.TimeUnit)
-		 */
-		@Override
-		public boolean tryLock(long arg0, TimeUnit arg1)
-				throws InterruptedException {
-			throw new AssertionError("Not yet implemented.");
-		}
-
-		/**
-		 * @see java.util.concurrent.locks.Lock#unlock()
-		 */
-		@Override
-		public void unlock() {
-			for (ReadWriteLock rw : collection) {
-				rw.readLock().unlock();
-			}
-			super.unlock();
-		}
-		
-	}
-	
-	class CollectionWriteLock extends ReentrantLock {
-		private static final long serialVersionUID = 786220323240639993L;
-
-		/**
-		 * @see java.util.concurrent.locks.Lock#lock()
-		 */
-		@Override
-		public void lock() {
-			super.lock();
-			for (ReadWriteLock rw : collection) {
-				rw.writeLock().lock();
-			}
-		}
-
-		/**
-		 * @see java.util.concurrent.locks.Lock#lockInterruptibly()
-		 */
-		@Override
-		public void lockInterruptibly() throws InterruptedException {
-			super.lockInterruptibly();
-			for (ReadWriteLock rw : collection) {
-				rw.writeLock().lockInterruptibly();
-			}
-		}
-
-		/**
-		 * @see java.util.concurrent.locks.Lock#newCondition()
-		 */
-		@Override
-		public Condition newCondition() {
-			throw new AssertionError("Not yet implemented.");
-		}
-
-		/**
-		 * @see java.util.concurrent.locks.Lock#tryLock()
-		 */
-		@Override
-		public boolean tryLock() {
-			if (super.tryLock()) {
-				List<Lock> locked = new LinkedList<Lock>();
-				for (ReadWriteLock rw : collection) {
-					Lock lock = rw.writeLock();
-					if (lock.tryLock()) {
-						locked.add(lock);
-					} else {
-						for (Lock l: locked) {
-							l.unlock();
-						}
-						super.unlock();
-						
-						return false;
-					}
-				}
-				
-				return true;
-			} else {
-				return false;
-			}
-		}
-
-		/**
-		 * @see java.util.concurrent.locks.Lock#tryLock(long, java.util.concurrent.TimeUnit)
-		 */
-		@Override
-		public boolean tryLock(long arg0, TimeUnit arg1)
-				throws InterruptedException {
-			throw new AssertionError("Not yet implemented.");
-		}
-
-		/**
-		 * @see java.util.concurrent.locks.Lock#unlock()
-		 */
-		@Override
-		public void unlock() {
-			for (ReadWriteLock rw : collection) {
-				rw.writeLock().unlock();
-			}
-			super.unlock();
-		}
-	}
 	
 }

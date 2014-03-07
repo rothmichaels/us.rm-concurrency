@@ -5,9 +5,11 @@
  */
 package us.rothmichaels.concurrency.collections;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
@@ -28,10 +30,12 @@ public class LockCollection implements Lock {
 
 	private final Lock outterLock;
 	private final Collection<Lock> innerLocks;
+	private final int size;
 	
 	public LockCollection(Lock lock, Collection<Lock> lockCollection) {
 		outterLock = lock;
 		innerLocks = new ArrayList<Lock>(lockCollection);
+		size = innerLocks.size();
 	}
 
 	/**
@@ -62,7 +66,7 @@ public class LockCollection implements Lock {
 	@Override
 	public boolean tryLock() {
 		if (outterLock.tryLock()) {
-			List<Lock> locked = new ArrayList<Lock>(innerLocks.size());
+			List<Lock> locked = new ArrayList<Lock>(size);
 			locked.add(this);
 			for (Lock lock : innerLocks) {
 				if (lock.tryLock()) {
@@ -87,8 +91,46 @@ public class LockCollection implements Lock {
 	@Override
 	public boolean tryLock(long time, TimeUnit unit)
 			throws InterruptedException {
-		// TODO Auto-generated method stub
-		return false;
+		// queues of locks to try / have been tried / have been locked
+		Deque<Lock> locksToBeTried = new ArrayDeque<Lock>(innerLocks);
+		locksToBeTried.push(outterLock);
+		Deque<Lock> locksTried = new ArrayDeque<Lock>(size+1);
+		List<Lock> locksLocked = new ArrayList<Lock>(size+1);
+		
+		// start timing try
+		final long start = System.nanoTime();
+		final long end = start + TimeUnit.NANOSECONDS.convert(time, unit);
+		
+		// try to unlock
+		while (!locksToBeTried.isEmpty() || !locksTried.isEmpty()) {
+			while (!locksToBeTried.isEmpty()) {
+				Lock lock = locksToBeTried.pop();
+				if (lock.tryLock()) {
+					locksLocked.add(lock);
+				} else {
+					locksTried.add(lock);
+				}
+			}
+			
+			while (!locksTried.isEmpty()) {
+				final long timeout = end - System.nanoTime();
+				if (timeout > 0) {
+					Lock lock = locksTried.pop();
+					if (lock.tryLock(timeout, TimeUnit.NANOSECONDS)) {
+						locksLocked.add(lock);
+					} else {
+						locksToBeTried.add(lock);
+					}
+				} else { // took too long
+					for (Lock lock : locksLocked) {
+						lock.unlock();
+					}
+					return false; 
+				}
+			}
+		}
+		
+		return true;
 	}
 
 	/**
